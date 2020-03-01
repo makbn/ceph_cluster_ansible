@@ -1,0 +1,114 @@
+---
+- name: setup ceph controller
+  hosts: ceph-controller
+  become: true
+  tasks:
+    - name: Check .ssh local directory exists
+      stat:
+        path: "~/.ssh"
+      register: ssh_directory_exists_check
+
+    - name: Check needed OS tools exist
+      shell: which sshpass ssh-keygen ssh-copy-id
+      register: os_tools_exist
+      ignore_errors: true
+
+    - name: Fail execution if any of the needed OS tools is missing
+      fail:
+        msg: "One or more of the: sshpass, ssh-keygen, ssh-copy-id are missing on this machine. Please install them - using your distribution's recommended method - before continuing."
+      when: os_tools_exist.rc != 0
+
+    - name: Create ~/.ssh local directory
+      file:
+        path: "~/.ssh"
+        state: directory
+        mode: "0700"
+      register: ssh_directory_creation
+      when: ssh_directory_exists_check is defined and ssh_directory_exists_check.stat.exists == false
+
+    - name: Generate /etc/ssh/ RSA host key
+      command: ssh-keygen -q -t rsa -f ~/.ssh/id_rsa -C "" -N ""
+      args:
+      creates: ~/.ssh/id_rsa
+
+    - name: Distribute the ssh key to the computes
+      shell: '/usr/local/bin/sshpass -p "{{ ceph_user_pass }}" ssh-copy-id -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa.pub "{{ ceph_user_name }}@{{ hostvars[item] }}"'
+      register: ssh_copy_id_execution_computes
+      with_items:
+        - "{{ groups['all']}}"
+      failed_when: ssh_copy_id_execution_computes.rc != 0
+
+    - name: Distribute the ssh key to the monitoring
+      shell: '/usr/local/bin/sshpass -p "{{ ceph_user_pass }}" ssh-copy-id -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa.pub "{{ ceph_user_name }}@{{ hostvars[item] }}"'
+      register: ssh_copy_id_execution_monitoring
+      with_items:
+        - "{{ groups['ceph-monitor']}}"
+      failed_when: ssh_copy_id_execution_monitoring.rc != 0
+
+    - name: Configure firewall rules
+    - firewalld:
+        port: 80/tcp
+        zone: public
+        permanent: yes
+        state: enabled
+
+    - firewalld:
+        port: 2003/tcp
+        zone: public
+        permanent: yes
+        state: enabled
+
+    - firewalld:
+        port: 4505-4506/tcp
+        zone: public
+        permanent: yes
+        state: enabled
+
+    - name: Adding ceph repository
+      shell:
+        cmd: sudo rpm -Uvh https://download.ceph.com/rpm-nautilus/el7/noarch/ceph-release-1-1.el7.noarch.rpm
+
+    - name: Install ceph-deploy
+      yum:
+        name: ceph-deplo
+        state: present
+      when: ceph_monitoring_node_done == true and ceph_compute_node_done == true
+
+    - name: Create a directory for ceph
+      file:
+        path: ~/ceph_cluster
+        state: directory
+    # running ceph-deploy command with list of monitoring server separeted by space
+    # ceph-deploy new mon [mon...]
+    - name: This command will change the working directory to somedir/.
+      shell:
+        cmd: "ceph-deploy new {{ groups['ceph-monitor'] | list | join(' ') }}"
+        chdir: ~/ceph_cluster
+
+    # exmple: public network = 192.168.1.0/24
+    - name: Add public net to conf
+      lineinfile:
+        path: ~/ceph_cluster/ceph.conf
+        line: "public network = {{ public_network_range}}"
+
+    # running ceph-deploy command with list of monitoring server separeted by space
+    # ceph-deploy install ceph-controller ceph-compute [ceph-compute...] ceph-monitor [ceph-monitor...]
+    - name: Install ceph on all the nodes from the ceph-admin node
+      shell:
+        cmd: "ceph-deploy new {{ groups['all'] | list | join(' ') }}"
+        chdir: ~/ceph_cluster
+
+    - name: Deploy the initial monitors and gather the keys
+      shell:
+        cmd: ceph-deploy mon create-initial
+        chdir: ~/ceph_cluster
+
+    - name: Copy the configuration file from ceph-admin node to all ceph nodes
+      shell:
+        cmd: "ceph-deploy admin {{ groups['all'] | list | join(' ') }}"
+        chdir: ~/ceph_cluster
+
+    - name: Install the Manager daemon from Ceph-admin node on Ceph Compute Nodes (OSD)
+      shell:
+        cmd: "ceph-deploy mgr create {{ groups['ceph-compute'] | list | join(' ') }}"
+        chdir: ~/ceph_cluster

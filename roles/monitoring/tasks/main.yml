@@ -1,0 +1,16 @@
+---
+- name: setup ceph monitoring node
+  hosts: ceph-monitor
+  become: true
+  tasks:
+    - name: Configure firewall rules
+    - firewalld:
+        port: 6789/tcp
+        zone: public
+        permanent: yes
+        state: enabled
+
+    - name: End of setup
+      command: /usr/bin/true
+      register: ceph_monitoring_node_done
+      ignore_errors: True

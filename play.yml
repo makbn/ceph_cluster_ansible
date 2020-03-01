@@ -1,0 +1,25 @@
+#!/usr/bin/ansible-playbook
+
+# config all nodes preflight settins
+- hosts: all
+  become: yes
+  roles:
+    - { role: common, tags: common }
+
+# config monitoring nodes
+- hosts: ceph-monitor
+  become: yes
+  roles:
+    - { role: monitoring, tags: monitoring }
+
+# config compute nodes
+- hosts: ceph-compute
+  become: yes
+  roles:
+    - { role: compute, tags: compute }
+
+# config controller node and install ceph-deploy
+- hosts: ceph-controller
+  become: yes
+  roles:
+    - { role: controller, tags: controller }

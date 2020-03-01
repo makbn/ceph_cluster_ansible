@@ -1,0 +1,48 @@
+---
+- name: setup ceph node
+  hosts: all
+  become: true
+  tasks:
+    - name: Ensure epel repo present
+      yum:
+        name: https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
+        state: present
+
+    - name: Install ntp and python-pip
+      yum:
+        name:
+          - ntp
+          - ntpdate
+          - ntp-doc
+          - python-pip
+        state: present
+
+    - name: Make sure ntpd service is running
+      systemd:
+        state: started
+        enabled: yes
+        name: ntpd
+
+    - name: Make sure we have a 'wheel' group
+      group:
+        name: wheel
+        state: present
+
+    - name: Allow 'wheel' group to have passwordless sudo
+      lineinfile:
+        dest: /etc/sudoers
+        state: present
+        regexp: "^%wheel"
+        line: "%wheel ALL=(ALL) NOPASSWD: ALL"
+        validate: "visudo -cf %s"
+
+    - name: Add ceph user to all nodes
+      user:
+        name: "{{ ceph_user_name }}"
+        group: admin, wheel
+        append: yes
+        password: "{{ ceph_user_pass }}"
+
+    - name: Disable SELinux
+      selinux:
+        state: disabled
