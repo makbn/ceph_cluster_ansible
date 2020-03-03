@@ -6,7 +6,7 @@ Install and configure a Ceph (Nautilus) Cluster on CentOS 7 Servers with 2 compu
 
 ### Inventory
 
-Change list of nodes inside `/inventory/hosts` 
+Change the list of nodes inside `/inventory/hosts` 
 
 ### How To
 After running the playbook, you need to disks as OSD using the following commands:
